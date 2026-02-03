@@ -1,0 +1,153 @@
+---
+title: "Lab3"
+author: "Shuchen Wu"
+format: html
+editor: visual
+embed-resources: true
+fig-width: 8
+fig-height: 6
+---
+
+## Step 1
+
+```{r}
+met <- read.csv("met_all.gz")
+
+```
+
+## Step 2
+
+```{r}
+nrow(met)
+ncol(met)
+
+```
+
+We have 2377343 rows and 30 columns here.
+
+## Step 3
+
+```{r}
+str(met)
+
+```
+
+## Step 4
+
+```{r}
+key_vars <- c("year","day","hour","temp","elev","wind.sp")
+
+summary(met[key_vars])
+
+table(met$year, useNA = "ifany")
+table(met$hour, useNA = "ifany")
+
+table(met$elev == 9999, useNA = "ifany")
+
+met$elev[met$elev == 9999] <- NA
+
+max_elev <- max(met$elev, na.rm = TRUE)
+max_elev
+
+table(met$temp == -40, useNA = "ifany")
+met2 <- subset(met, !is.na(temp) & temp != -40)
+new_min_temp <- min(met2$temp, na.rm = TRUE)
+new_min_temp
+
+```
+
+## Step 5
+
+```{r}
+summary(met$elev)
+
+met2[met2$temp == -17.2, c("lat","lon","elev")]
+
+```
+
+We examined the elevation range using the summary() function. The minimum elevation in the dataset is -13m, and the maximum elevation is 4113m. According to external sources (e.g., NOAA and Wikipedia lists of US weather station elevations), weather stations in the United States are commonly found from slightly below sea level (e.g., Death Valley at \~-86 m) to over 4,000 m in mountainous regions such as the Rockies. Therefore, the elevation range in our dataset appears reasonable.
+
+The suspicious temperature value of --17.2C was investigated by examining its geographic coordinates. The latitude (38.767) and longitude (--104.3) correspond to a location near Colorado Springs, Colorado, at an elevation of approximately 1838 meters. This region is located at a relatively high altitude, where winter temperatures commonly fall below --15C. Therefore, the --17.2C temperature value appears plausible and does not indicate a data error.
+
+## Step 6
+
+```{r}
+max_elev <- max(met2$elev, na.rm = TRUE)
+max_elev
+
+high_station <- subset(met2, elev == max_elev)
+dim(high_station)
+
+summary(high_station$temp)
+summary(high_station$wind.sp)
+
+cor(high_station$temp, high_station$wind.sp, use = "complete.obs")
+
+cor(high_station$temp, high_station$hour, use = "complete.obs")
+cor(high_station$wind.sp, high_station$hour, use = "complete.obs")
+
+cor(high_station$temp, high_station$day, use = "complete.obs")
+cor(high_station$wind.sp, high_station$day, use = "complete.obs")
+
+```
+
+## Step 7
+
+```{r}
+# Elevation
+hist(met2$elev, breaks = 50,
+     main = "Histogram of Elevation",
+     xlab = "Elevation (m)")
+
+# Temperature
+hist(met2$temp, breaks = 50,
+     main = "Histogram of Temperature",
+     xlab = "Temperature (C)")
+
+# Wind speed
+hist(met2$wind.sp, breaks = 50,
+     main = "Histogram of Wind Speed",
+     xlab = "Wind speed")
+
+# install.packages("leaflet")
+library(leaflet)
+
+leaflet(high_station) %>%
+  addProviderTiles('OpenStreetMap') %>%
+  addCircles(lat=~lat,lng=~lon, opacity=1, fillOpacity=1, radius=100)
+
+# install.packages("lubridate")
+library(lubridate)
+
+high_station$date <- with(high_station, ymd_h(paste(year, month, day, hour, sep= ' ')))
+
+summary(high_station$date)
+
+high_station <- high_station[order(high_station$date), ]
+
+head(high_station)
+
+# Temperature time series
+plot(high_station$date, high_station$temp, type = "l",
+     main = "Temperature at Highest-Elevation Station",
+     xlab = "Date", ylab = "Temperature (C)")
+
+# Wind speed time series
+plot(high_station$date, high_station$wind.sp, type = "l",
+     main = "Wind Speed at Highest-Elevation Station",
+     xlab = "Date", ylab = "Wind speed")
+
+
+```
+
+The elevation distribution is strongly right-skewed, with most stations at low elevations and a long tail up to the highest station at 4113 m. Temperature appears roughly unimodal and centered around the low-to-mid 23C, while wind speed is also right-skewed with most values near zero and occasional higher speeds. The highest-elevation station is located in the Colorado Rockies, where temperature shows clear short-term (diurnal) fluctuations and wind speed varies more irregularly over time.
+
+## Step 8
+
+Questions about the dataset:
+
+How were temperature and wind speed measurements collected at each station (automatic sensors or manual observations)?
+
+Do all stations use the same instruments and calibration standards?
+
+Would we expect a strong negative relationship between elevation and average temperature across stations?
