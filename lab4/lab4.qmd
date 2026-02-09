@@ -1,0 +1,285 @@
+---
+title: "Lab4"
+author: "Shuchen Wu"
+format: html
+editor: visual
+embed-resources: true
+fig-width: 8
+fig-height: 6
+---
+
+## Step 1
+
+```{r}
+if (!file.exists("covid_processed.csv"))
+  download.file(
+    url = "https://raw.githubusercontent.com/dmcable/BIOSTAT620W26/main/data/covid/covid_processed.csv",
+    destfile = "covid_processed.csv",
+    method   = "libcurl",
+    timeout  = 60
+    )
+```
+
+## Step 2
+
+```{r}
+library(dplyr)
+library(lubridate)
+covid <- read.csv("covid_processed.csv")
+covid <- covid %>%
+  mutate(
+    cases_rate   = cases   / pop * 100000,
+    hosp_rate    = hosp    / pop * 100000,
+    booster_rate = booster / pop * 100000,
+    series_rate  = series  / pop * 100000,
+    deaths_rate  = deaths  / pop * 100000
+  )
+
+covid$date <- ymd(covid$date)
+
+covid_state <- covid %>%
+  group_by(state) %>%
+  summarise(
+    cases_rate   = mean(cases_rate,   na.rm = TRUE),
+    hosp_rate    = mean(hosp_rate,    na.rm = TRUE),
+    booster_rate = mean(booster_rate, na.rm = TRUE),
+    series_rate  = mean(series_rate,  na.rm = TRUE),
+    deaths_rate  = mean(deaths_rate,  na.rm = TRUE),
+    pop          = first(pop),
+    region       = first(region)
+  )
+
+median_pop <- median(covid_state$pop, na.rm = TRUE)
+
+covid_state <- covid_state %>%
+  mutate(
+    pop_cat = ifelse(pop >= median_pop, "Large", "Small")
+  )
+
+covid_state$region <- as.factor(covid_state$region)
+
+summary(covid_state)
+
+```
+
+## Step 3
+
+```{r}
+library(ggplot2)
+library(tidyr)
+covid_long <- covid_state %>%
+  select(region, cases_rate, deaths_rate) %>%
+  pivot_longer(
+    cols = c(cases_rate, deaths_rate),
+    names_to = "type",
+    values_to = "rate"
+  )
+
+ggplot(covid_long, aes(x = 1, y = rate, fill = region)) +
+  geom_violin(alpha = 0.7) +
+  facet_wrap(~ type, scales = "free_y") +
+  labs(
+    x = "",
+    y = "Rate per 100,000",
+    title = "Case and Death Rates by Region"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank()
+  )
+
+```
+
+Cases_rate: Most regions have case rates concentrated around 160-200 per 100,000, but there is clear heterogeneity across regions. Some regions show much wider violins (greater variability across states), while others are more tightly clustered.
+
+Deaths_rate: Death rates are much smaller in magnitude 1-3 per 100,000 and generally appear more concentrated than case rates. A few regions show noticeably wider spread (suggesting larger between-state differences), while at least one region has consistently lower death rates.
+
+## Step 4
+
+```{r}
+covid <- covid %>%
+  mutate(
+    date = ymd(date),
+    region = as.factor(region),
+    cases_rate = cases / pop * 100000
+  )
+
+min_date <- min(covid$date, na.rm = TRUE)
+
+covid_2wk <- covid %>%
+  filter(date <= min_date + days(14))
+
+ggplot(covid_2wk, aes(x = date, y = cases_rate, color = region)) +
+  geom_point(alpha = 0.6) +
+  stat_smooth(se = FALSE, span = 0.7) +
+  labs(
+    title = "Case rates over time (first 2 weeks) by region",
+    x = "Date",
+    y = "Cases per 100,000",
+    color = "Region"
+  ) +
+  theme_minimal()
+
+ggplot(covid_2wk, aes(x = date, y = cases_rate, color = region)) +
+  geom_point(alpha = 0.6) +
+  stat_smooth(method = "lm", se = FALSE) +
+  labs(
+    title = "Linear trend of case rates (first 2 weeks) by region",
+    x = "Date",
+    y = "Cases per 100,000",
+    color = "Region"
+  ) +
+  theme_minimal()
+
+```
+
+The linear model provides a more stable and interpretable trend given the limited time window and sparse data points. The default smoother tends to overfit and exaggerate curvature due to the presence of outliers. It is not clear which one is better in this case.
+
+I experimented with different span values. A span around 0.7 provides a balance between noise and oversmoothing.
+
+Over the first two weeks, most regions show very small case rates with little change over time. The majority of points are clustered near zero, indicating relatively low variation during this short period.
+
+One region exhibits noticeably higher case rates compared to others, which influences the smooth curves and highlights regional heterogeneity.
+
+## Step 5
+
+```{r}
+ggplot(covid_state, aes(x = pop_cat, fill = region)) +
+  geom_bar(position = "dodge") +
+  scale_fill_brewer(palette = "Set2") +
+  labs(
+    title = "Number of States by Population Category and Region",
+    x = "Population Category",
+    y = "Number of States",
+    fill = "Region"
+  ) +
+  theme_minimal()
+
+```
+
+A few regions contain noticeably more large states, whereas other regions show a higher count of small states. This suggests that population size distribution varies by region rather than being uniform across the country.
+
+## Step 6
+
+```{r}
+ggplot(covid_state, aes(x = region, y = series_rate)) +
+  stat_summary(fun.data = "mean_sdl", geom = "point", size = 2) +
+  stat_summary(fun.data = "mean_sdl", geom = "errorbar", width = 0.2) +
+  labs(
+    title = "Mean Vaccination Rate by Region (±1 SD)",
+    x = "Region",
+    y = "Vaccinated per 100,000 (series_rate)"
+  ) +
+  theme_minimal()
+
+ggplot(covid_state, aes(x = region, y = deaths_rate)) +
+  stat_summary(fun.data = "mean_sdl", geom = "point", size = 2) +
+  stat_summary(fun.data = "mean_sdl", geom = "errorbar", width = 0.2) +
+  labs(
+    title = "Mean Death Rate by Region (±1 SD)",
+    x = "Region",
+    y = "Deaths per 100,000 (deaths_rate)"
+  ) +
+  theme_minimal()
+
+```
+
+Vaccination rates vary across regions, with Regions 1--3 generally showing higher mean vaccination levels compared to Regions 4--8. The error bars indicate noticeable variability within regions, suggesting that states in the same region can still differ substantially in vaccination coverage. Some regions, such as Region 6 and Region 10, display wider standard deviation ranges, indicating greater within-region heterogeneity.
+
+Death rates are relatively low overall compared to vaccination rates but still differ by region. Regions 4--6 appear to have slightly higher mean death rates, while Regions 1 and 10 show lower averages. The variability also differs across regions, with some regions exhibiting wide error bars, suggesting uneven mortality patterns among their states.
+
+## Step 7
+
+```{r}
+# install.packages("maps")
+library(maps)
+library(stringr)
+
+abb_to_name <- tibble(
+  state_abbr = state.abb,
+  state_full = state.name
+)
+
+covid_state2 <- covid_state %>%
+  left_join(abb_to_name, by = c("state" = "state_abbr")) %>%
+  mutate(region = str_to_lower(state_full))
+
+us_map <- map_data("state")
+
+map_df <- us_map %>%
+  left_join(covid_state2, by = "region")
+
+top10 <- covid_state2 %>%
+  arrange(desc(deaths_rate)) %>%
+  slice(1:10) %>%
+  select(region, deaths_rate)
+
+centroids <- us_map %>%
+  group_by(region) %>%
+  summarise(long = mean(range(long)), lat = mean(range(lat)), .groups = "drop")
+
+top10_lab <- top10 %>%
+  left_join(centroids, by = "region")
+
+ggplot(map_df, aes(x = long, y = lat, group = group)) +
+  geom_polygon(aes(fill = deaths_rate), color = "white", linewidth = 0.2) +
+  coord_fixed(1.3) +
+  scale_fill_gradientn(
+    colors = c("#f7fbff", "#c6dbef", "#6baed6", "#2171b5", "#08306b"),
+    name = "Deaths per 100,000"
+  ) +
+  geom_text(
+    data = top10_lab,
+    aes(x = long, y = lat),
+    label = "*",
+    color = "black",
+    size = 5,
+    inherit.aes = FALSE
+  ) +
+  labs(
+    title = "Spatial Trend in COVID Death Rates (Deaths per 100,000)",
+    subtitle = "* indicates top 10 states by death rate"
+  ) +
+  theme_void() +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(face = "bold")
+  )
+
+```
+
+COVID death rates are not evenly distributed across the United States.\
+Higher death rates appear to be concentrated in parts of the South, while several northern states show comparatively lower values.\
+The asterisks highlight the top ten states with the highest death rates, emphasizing regional clustering rather than random distribution.\
+Overall, the map suggests a clear geographic pattern in COVID mortality.
+
+## Step 8
+
+```{r}
+# install.packages("ggrepel")
+library(ggrepel)
+
+top10_states <- covid_state %>%
+  arrange(desc(deaths_rate)) %>%
+  slice(1:10)
+
+ggplot(covid_state, aes(x = series_rate, y = deaths_rate, color = region)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE) +
+  ggrepel::geom_text_repel(
+    data = top10_states,
+    aes(label = state),
+    size = 3,
+    max.overlaps = Inf
+  ) +
+  labs(
+    title = "Death Rate vs Vaccination Rate by State",
+    subtitle = "Top 10 states by death rate are labeled (ggrepel)",
+    x = "Vaccinated per 100,000 (series_rate)",
+    y = "Deaths per 100,000 (deaths_rate)",
+    color = "Region"
+  ) +
+  theme_minimal()
+
+```
