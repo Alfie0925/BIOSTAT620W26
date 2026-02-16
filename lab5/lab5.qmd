@@ -1,0 +1,139 @@
+---
+title: "Lab5"
+author: "Shuchen Wu"
+format: html
+editor: visual
+embed-resources: true
+fig-width: 8
+fig-height: 6
+---
+
+## Step 1
+
+```{r}
+# install.packages("data.table")
+library(data.table)
+```
+
+## Step 2
+
+```{r}
+url <- 'https://raw.githubusercontent.com/dmcable/BIOSTAT620W26/main/data/covid/population.csv'
+if (!file.exists("covid_processed.csv"))
+  download.file(
+    url = url,
+    destfile = "population.csv",
+    method   = "libcurl",
+    timeout  = 60
+    )
+population <- read.csv('population.csv')
+```
+
+## Step 3
+
+```{r}
+# install.packages("janitor")
+library(tidyverse)
+library(janitor)
+population <- row_to_names(population, 1)
+population <- population %>%
+  select(-1, -state)
+population <- population %>%
+  rename(state_name = NAME)
+
+abb_map <- setNames(state.abb, state.name)
+abb_map["District of Columbia"] <- "DC"
+abb_map["Puerto Rico"] <- "PR"
+
+population <- population %>%
+  mutate(state = abb_map[state_name])
+
+population <- population %>%
+  pivot_longer(
+    cols = starts_with("POP"),
+    names_to = "year",
+    values_to = "population"
+  )
+
+head(population)
+```
+
+## Step 4
+
+```{r}
+library(jsonlite)
+url <- "https://github.com/datasciencelabs/2024/raw/refs/heads/main/data/regions.json"
+regions <- fromJSON(url)
+regions <- regions %>%
+  mutate(region = unlist(region))
+regions <- regions %>%
+  unnest(states) %>%
+  transmute(
+    state_name = states,
+    region = factor(region),
+    region_name = region_name
+  )
+regions <- regions %>%
+  mutate(
+    region_name = if_else(region == 2,
+                          "NY & NJ + PR + VI",
+                          region_name)
+  )
+
+head(regions, 10)
+```
+
+## Step 5
+
+```{r}
+population <- population %>%
+  left_join(regions, by = "state_name")
+
+head(population)
+```
+
+## Step 6
+
+```{r}
+library(httr2)
+api <- "https://data.cdc.gov/resource/pwn4-m3yp.json"
+request <- request(paste0(api,paste0("?$limit=10000000000")))
+response <- request |> req_perform() |> resp_body_string()
+cases_raw <- fromJSON(response)
+head(cases_raw)
+```
+
+If we replace "?\$limit=10000000000" with an empty string, the API will return only the default number of rows instead of the full dataset. Most Socrata/CDC APIs apply a default limit (often around 1000 rows) when \$limit is not specified. As a result, cases_raw would contain only a partial subset of the data, which could lead to incorrect summaries or analyses because many records would be missing.
+
+## Step 7
+
+```{r}
+library(lubridate)
+cases <- cases_raw %>%
+  transmute(
+    state = state,
+    date  = as_date(ymd_hms(end_date)),
+    cases = as.numeric(new_cases)
+  )
+
+head(cases)
+```
+
+## Step 8
+
+```{r}
+data_full <- cases %>%
+  left_join(population, by = "state")
+
+data_full <- data_full %>%
+  mutate(
+    epi_week = epiweek(date),
+    epi_year = epiyear(date)
+  )
+
+data_full <- data_full %>%
+  arrange(state, date)
+
+head(data_full)
+
+```
