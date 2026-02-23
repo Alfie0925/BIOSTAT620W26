@@ -1,0 +1,281 @@
+---
+title: "Lab6"
+author: "Shuchen Wu"
+format: html
+editor: visual
+embed-resources: true
+fig-width: 8
+fig-height: 6
+---
+
+## Load data
+
+```{r}
+# install.packages("tidytext")
+library(dplyr)
+library(ggplot2)
+library(tidytext)
+library(readr)
+
+mtsamples <- read_csv(
+  "https://raw.githubusercontent.com/dmcable/BIOSTAT620W26/main/data/mtsamples/mtsamples.csv"
+)
+
+# quick check
+glimpse(mtsamples)
+head(mtsamples)
+
+```
+
+## Question 1
+
+```{r}
+spec_counts <- mtsamples %>%
+  count(medical_specialty, sort = TRUE)
+
+spec_counts
+
+ggplot(spec_counts, aes(x = reorder(medical_specialty, n), y = n)) +
+  geom_col() +
+  coord_flip() +
+  labs(x = "Medical specialty", y = "Count")
+
+```
+
+There are a total of 40 medical_specialty categories.
+
+These categories are clearly related and conceptually overlap. One group consists of true "specialties/departments" (e.g., Surgery, Orthopedics, Radiology, Neurology, Urology, etc.). Another group is more like "document/record types or scenarios," not entirely specialists (e.g., SOAP/Chart/Progress Notes, Discharge Summary, Office Notes, Letters, Emergency Room Reports, etc.).
+
+Therefore, they are not completely mutually exclusive or at the same level of classification: The same medical record might belong to a specific specialty (e.g., Surgery) and also to a certain record type (e.g., Discharge Summary or SOAP note). The dataset simply assigns a label to each record, so what you see is a "single classification at the label level," but semantic overlap exists.
+
+The distribution is completely uneven (highly skewed), exhibiting a typical "long-tail distribution":
+
+The largest class is Surgery = 1103, accounting for approximately 1103/4999 = 22%.
+
+The top 10 classes combined account for 3657/4999 = 73%, indicating that most samples are concentrated in a few categories.
+
+The tail categories have extremely few samples (e.g., Hospice - Palliative Care = 6, Allergy/Immunology = 7, Autopsy = 8, etc.), and these categories may be very unstable in subsequent analyses (due to insufficient sample size).
+
+## Question 2
+
+```{r}
+word_counts <- mtsamples %>%
+  select(transcription) %>%
+  unnest_tokens(word, transcription) %>% 
+  count(word, sort = TRUE)         
+
+top20 <- word_counts %>% slice_head(n = 20)
+top20
+
+top20 %>%
+  ggplot(aes(x = reorder(word, n), y = n)) +
+  geom_col() +
+  coord_flip() +
+  labs(x = "Word", y = "Count", title = "Top 20 most frequent words (raw)")
+
+```
+
+From the raw token counts, the most frequent words are common English function words such as "the", "and", "was", "of", "to", "a", "with", "in", "is". This is expected because the transcription field contains long narrative sentences, so high-frequency stop words dominate the counts.
+
+This result makes sense, but it provides limited domain insight: these words reflect grammar rather than medical content. The first medically meaningful token that appears in the top 20 is "patient", which is consistent with clinical notes frequently referring to the patient throughout the report.
+
+Overall, the main takeaway is that a "raw" frequency plot is mostly measuring stop words; to get more informative insights about medical themes, we would typically remove stop words (and possibly punctuation/numbers) before examining frequent terms.
+
+## Question 3
+
+```{r}
+library(stringr)
+
+data("stop_words")
+
+word_counts_clean <- mtsamples %>%
+  select(transcription) %>%
+  unnest_tokens(word, transcription) %>%
+  anti_join(stop_words, by = "word") %>%        
+  filter(!str_detect(word, "^[0-9]+$")) %>%       
+  count(word, sort = TRUE)
+
+top20_clean <- word_counts_clean %>% slice_head(n = 20)
+top20_clean
+
+top20_clean %>%
+  ggplot(aes(x = reorder(word, n), y = n)) +
+  geom_col() +
+  coord_flip() +
+  labs(x = "Word", y = "Count", title = "Top 20 most frequent words (clean)")
+```
+
+After removing stop words (and numeric tokens), the most frequent words shift from common function words (e.g., the, and, of) to content-bearing clinical terms. The top words include patient, history, diagnosis, procedure, pain, and blood, which are all central concepts in medical reports. We also see anatomy/location terms such as left, anterior, artery, and clinical/action words such as performed, incision, removed, and anesthesia, consistent with operative or procedural documentation.
+
+This result gives a much better idea of what the text is about: the corpus is largely describing patients, their clinical history, diagnoses, and medical procedures/treatments. Compared to the raw top-20 list, the cleaned list is more interpretable and highlights the medical nature of the dataset.
+
+One remaining artifact is "mg", which appears frequently because medication dosages are commonly recorded. If desired, we could also filter common units (e.g., mg, ml, cm) to focus even more on clinical concepts.
+
+## Question 4
+
+```{r}
+library(tidyr)
+
+data("stop_words")
+
+bigram_counts <- mtsamples %>%
+  select(transcription) %>%
+  unnest_tokens(bigram, transcription, token = "ngrams", n = 2) %>%
+  separate(bigram, into = c("w1", "w2"), sep = " ") %>%
+  filter(!w1 %in% stop_words$word,
+         !w2 %in% stop_words$word) %>%    
+  filter(!str_detect(w1, "^[0-9]+$"),
+         !str_detect(w2, "^[0-9]+$")) %>%     
+  unite(bigram, w1, w2, sep = " ") %>%
+  count(bigram, sort = TRUE)
+
+top20_bigram <- bigram_counts %>% slice_head(n = 20)
+top20_bigram
+
+top20_bigram %>%
+  ggplot(aes(x = reorder(bigram, n), y = n)) +
+  geom_col() +
+  coord_flip() +
+  labs(x = "Bigram", y = "Count", title = "Top 20 bigrams (stop words + numbers removed)")
+
+
+trigram_counts <- mtsamples %>%
+  select(transcription) %>%
+  unnest_tokens(trigram, transcription, token = "ngrams", n = 3) %>%
+  separate(trigram, into = c("w1", "w2", "w3"), sep = " ") %>%
+  filter(!w1 %in% stop_words$word,
+         !w2 %in% stop_words$word,
+         !w3 %in% stop_words$word) %>%
+  filter(!str_detect(w1, "^[0-9]+$"),
+         !str_detect(w2, "^[0-9]+$"),
+         !str_detect(w3, "^[0-9]+$")) %>%
+  unite(trigram, w1, w2, w3, sep = " ") %>%
+  count(trigram, sort = TRUE)
+
+top20_trigram <- trigram_counts %>% slice_head(n = 20)
+top20_trigram
+
+top20_trigram %>%
+  ggplot(aes(x = reorder(trigram, n), y = n)) +
+  geom_col() +
+  coord_flip() +
+  labs(x = "Trigram", y = "Count", title = "Top 20 trigrams (stop words + numbers removed)")
+
+```
+
+Bigrams: Compared with unigrams, the most frequent bigrams are clearly more meaningful clinical phrases rather than isolated words. Many top bigrams reflect standard sections or repeated content in medical notes, such as "medical history," "physical examination," "vital signs," "family history," "social history," and common clinical measures like "blood pressure." We also see procedure-related phrases such as "preoperative diagnosis," "postoperative diagnosis," "blood loss," "informed consent," and "sterile fashion," which suggests that a substantial portion of the transcripts are operative/procedural reports.
+
+Trigrams: When moving to trigrams, the phrases become even more specific and read like common note templates. Examples include "past medical history," "past surgical history," "estimated blood loss," "coronary artery disease," "usual sterile fashion," "blood loss minimal," and exam/vitals phrases like "examination vital signs" / "vital signs temperature." These provide clearer context about how the notes are written (structured, templated clinical documentation) and what topics appear frequently (history, vitals, cardiovascular disease, surgery/procedures).
+
+How the result changes from bigrams to trigrams:\
+The main change is that trigrams are more informative but less frequent/sparser: exact 3-word sequences repeat less often than 2-word sequences, so counts drop and the list becomes more "template-like." In other words, bigrams capture common collocations (e.g., blood pressure), while trigrams capture more complete clinical phrases and documentation patterns (e.g., past medical history, estimated blood loss).
+
+## Question 5
+
+```{r}
+target <- "blood"
+
+bigrams_all <- mtsamples %>%
+  select(transcription) %>%
+  unnest_tokens(bigram, transcription, token = "ngrams", n = 2) %>%
+  separate(bigram, into = c("w1", "w2"), sep = " ")
+
+before_tbl <- bigrams_all %>%
+  filter(w2 == target) %>%
+  count(word_before = w1, sort = TRUE)
+
+after_tbl <- bigrams_all %>%
+  filter(w1 == target) %>%
+  count(word_after = w2, sort = TRUE)
+
+before_tbl %>% slice_head(n = 15)
+after_tbl  %>% slice_head(n = 15)
+
+
+data("stop_words")
+
+bigrams_all_clean <- bigrams_all %>%
+  filter(!w1 %in% stop_words$word,
+         !w2 %in% stop_words$word) %>%
+  filter(!str_detect(w1, "^[0-9]+$"),
+         !str_detect(w2, "^[0-9]+$"))
+
+before_tbl <- bigrams_all_clean %>%
+  filter(w2 == target) %>%
+  count(word_before = w1, sort = TRUE)
+
+after_tbl <- bigrams_all_clean %>%
+  filter(w1 == target) %>%
+  count(word_after = w2, sort = TRUE)
+
+before_tbl %>% slice_head(n = 15)
+after_tbl  %>% slice_head(n = 15)
+```
+
+## Question 6
+
+```{r}
+data("stop_words")
+
+top5_by_spec <- mtsamples %>%
+  select(medical_specialty, transcription) %>%
+  unnest_tokens(word, transcription) %>%
+  anti_join(stop_words, by = "word") %>%
+  filter(!str_detect(word, "^[0-9]+$")) %>% 
+  count(medical_specialty, word, sort = TRUE) %>%
+  group_by(medical_specialty) %>%
+  top_n(5, n) %>% 
+  arrange(medical_specialty, desc(n))
+
+top5_by_spec
+
+top5_summary <- top5_by_spec %>%
+  group_by(medical_specialty) %>%
+  summarise(top5_words = paste(word, collapse = ", "), .groups = "drop")
+
+top5_summary
+```
+
+## Question 7
+
+```{r}
+surg_patterns <- c(
+  "preoperative diagnosis",
+  "postoperative diagnosis",
+  "estimated blood loss",
+  "usual sterile fashion",
+  "informed consent"
+)
+
+flag_tbl <- mtsamples %>%
+  mutate(
+    txt = str_to_lower(transcription),
+    has_surg_phrase = str_detect(txt, paste(surg_patterns, collapse = "|"))
+  ) %>%
+  group_by(medical_specialty) %>%
+  summarise(
+    n_docs = n(),
+    prop_surg_phrase = mean(has_surg_phrase),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(prop_surg_phrase), desc(n_docs))
+
+flag_tbl %>% slice_head(n = 15)
+
+flag_tbl %>%
+  filter(n_docs >= 30) %>%
+  slice_head(n = 15) %>%
+  ggplot(aes(x = reorder(medical_specialty, prop_surg_phrase),
+             y = prop_surg_phrase)) +
+  geom_col() +
+  coord_flip() +
+  labs(x = NULL, y = "Proportion of notes with surgical template phrases",
+       title = "Surgical template phrases are concentrated in certain specialties")
+
+```
+
+I investigated whether common surgical/operative template phrases (e.g., preoperative diagnosis, postoperative diagnosis, estimated blood loss, usual sterile fashion, informed consent) appear more frequently in some specialties than others. For each medical_specialty, I computed the proportion of notes whose transcription contains at least one of these phrases.
+
+The results show a strong concentration in procedure-heavy specialties. For example, Neurosurgery has the highest proportion (\~0.76, 94 notes), followed by Ophthalmology (\~0.60, 83 notes) and Orthopedic (\~0.52, 355 notes). In contrast, several non-procedural or general note categories (e.g., General Medicine, Emergency Room Reports, SOAP / Chart / Progress Notes) have proportions close to 0, indicating these templated operative phrases are rarely used there.
+
+Overall, this suggests that a substantial subset of the dataset consists of standardized operative reports with repeated clinical documentation templates, and that these templates are much more prevalent in surgical/procedural specialties. This aligns with earlier n-gram results (Q4--Q5), where phrases like "estimated blood loss" and "pre/postoperative diagnosis" appeared among the most frequent bigrams/trigrams.
