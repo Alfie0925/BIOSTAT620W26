@@ -1,0 +1,426 @@
+---
+title: "HW2"
+author: "Shuchen Wu"
+format: html
+editor: visual
+embed-resources: true
+fig-width: 8
+fig-height: 6
+---
+
+## Step 1
+
+```{r}
+library(dplyr)
+
+individual <- read.csv("chs_individual.csv")
+regional   <- read.csv("chs_regional.csv")
+
+head(individual)
+head(regional)
+
+chs_merged <- left_join(individual, regional, by = "townname")
+
+head(chs_merged)
+
+nrow(individual)
+nrow(chs_merged)
+
+colSums(is.na(chs_merged))
+
+get_mode <- function(x) {
+  x_nonmiss <- x[!is.na(x)]
+  if(length(x_nonmiss) == 0) return(NA)
+  ux <- unique(x_nonmiss)
+  ux[which.max(tabulate(match(x_nonmiss, ux)))]
+}
+
+cat_vars <- c("asthma", "father_asthma", "mother_asthma",
+              "wheeze", "hayfever", "allergy",
+              "educ_parent", "smoke", "gasstove")
+
+num_vars <- c("agepft", "height", "weight", "bmi",
+              "fev", "fvc", "mmef",
+              "no_24hr", "pm2_5_fr")
+
+chs_imputed <- chs_merged %>%
+  group_by(male, hispanic) %>%
+  mutate(across(all_of(num_vars),
+                ~ ifelse(is.na(.x), mean(.x, na.rm = TRUE), .x))) %>%
+  ungroup()
+
+chs_imputed <- chs_imputed %>%
+  group_by(male, hispanic) %>%
+  mutate(across(all_of(cat_vars),
+                ~ {
+                  m <- get_mode(.x)
+                  ifelse(is.na(.x), m, .x)
+                })) %>%
+  ungroup()
+
+colSums(is.na(chs_imputed))
+
+head(chs_imputed)
+```
+
+I merged the individual and regional CHS datasets by townname, since this is the common location variable in the provided files. The number of rows in the merged dataset matches the number of rows in the individual dataset (both 1200), indicating that no duplicate rows were created by the merge.
+
+I used colSums to get the variables containing missing values (NAs):
+
+agepft, height, weight, bmi, asthma, father_asthma, mother_asthma, wheeze, hayfever, allergy, educ_parent, smoke, gasstove, fev, fvc, mmef, no_24hr, pm2_5_fr
+
+Amoung these, numeric variables are: agepft, height, weight, bmi, fev, fvc, mmef, no_24hr, pm2_5_fr
+
+categorical variables are: asthma, father_asthma, mother_asthma, wheeze, hayfever, allergy, educ_parent, smoke, gasstove
+
+Those missing values were imputed within groups defined by male and hispanic. For numeric variables, I used the group-specific mean, and for categorical variables, I used the group-specific mode. After imputation, all variables had 0 missing values.
+
+## Step 2
+
+```{r}
+chs_imputed <- chs_imputed %>%
+  mutate(
+    obesity_level = case_when(
+      bmi < 14 ~ "underweight",
+      bmi >= 14 & bmi < 22 ~ "normal",
+      bmi >= 22 & bmi <= 24 ~ "overweight",
+      bmi > 24 ~ "obese"
+    )
+  )
+
+head(chs_imputed)
+
+obesity_summary <- chs_imputed %>%
+  group_by(obesity_level) %>%
+  summarise(
+    min_bmi = min(bmi, na.rm = TRUE),
+    max_bmi = max(bmi, na.rm = TRUE),
+    n = n()
+  )
+
+obesity_summary
+```
+
+I created a new categorical variable obesity_level based on BMI using the specified cutoffs: underweight (BMI \< 14), normal (14 \<= BMI \< 22), overweight (22 \<= BMI \<= 24), and obese (BMI \> 24). To verify the coding, I created a summary table showing the minimum BMI, maximum BMI, and number of observations in each category.
+
+## Step 3
+
+```{r}
+chs_imputed <- chs_imputed %>%
+  mutate(
+    smoke_gas_exposure = case_when(
+      smoke == 0 & gasstove == 0 ~ "neither",
+      smoke == 1 & gasstove == 0 ~ "smoke_only",
+      smoke == 0 & gasstove == 1 ~ "gas_only",
+      smoke == 1 & gasstove == 1 ~ "both"
+    ),
+    smoke_gas_exposure = factor(
+      smoke_gas_exposure,
+      levels = c("neither", "smoke_only", "gas_only", "both")
+    )
+  )
+
+table(chs_imputed$smoke_gas_exposure)
+```
+
+I created a new categorical variable smoke_gas_exposure by combining smoke and gasstove. The variable has four categories: neither, smoke_only, gas_only, and both, corresponding to the four possible combinations of second-hand smoke exposure and gas stove exposure.
+
+## Step 4
+
+```{r}
+# 1. by town
+fev_by_town <- chs_imputed %>%
+  group_by(townname) %>%
+  summarise(
+    mean_fev = mean(fev, na.rm = TRUE),
+    sd_fev = sd(fev, na.rm = TRUE),
+    n = n()
+  ) %>%
+  arrange(mean_fev)
+
+
+fev_by_town
+
+# 2. by sex
+fev_by_sex <- chs_imputed %>%
+  group_by(male) %>%
+  summarise(
+    mean_fev = mean(fev, na.rm = TRUE),
+    sd_fev = sd(fev, na.rm = TRUE),
+    n = n()
+  ) %>%
+  arrange(mean_fev)
+
+fev_by_sex
+
+# 3. by obesity level
+fev_by_obesity <- chs_imputed %>%
+  group_by(obesity_level) %>%
+  summarise(
+    mean_fev = mean(fev, na.rm = TRUE),
+    sd_fev = sd(fev, na.rm = TRUE),
+    n = n()
+  ) %>%
+  arrange(mean_fev)
+
+fev_by_obesity
+
+# 4. by smoke_gas_exposure
+fev_by_exposure <- chs_imputed %>%
+  group_by(smoke_gas_exposure) %>%
+  summarise(
+    mean_fev = mean(fev, na.rm = TRUE),
+    sd_fev = sd(fev, na.rm = TRUE),
+    n = n()
+  ) %>%
+  arrange(mean_fev)
+
+fev_by_exposure
+```
+
+The average FEV varies across towns, with the lowest mean FEV observed in Mira Loma (about 1985 ml) and the highest in Alpine (about 2087 ml), suggesting geographic variation in lung function across communities.
+
+By sex, males have a higher mean FEV than females (about 2104 ml vs. 1959 ml), while the standard deviations are similar in the two groups.
+
+By obesity level, the mean FEV is lowest in the underweight group (about 1698 ml), followed by the normal group (about 2000 ml), followed by the overweight group (about 2224 ml), and highest in the obese group (about 2266 ml). This indicates that children in the higher BMI categories tend to have larger FEV values, although the underweight group is much smaller than the others.
+
+By smoke and gas exposure, the lowest mean FEV is observed in the gas_only group (about 2023 ml), followed by the both group (about 2025 ml), followed by the smoke_only group (about 2056 ml), whereas the neither group has the highest mean FEV (about 2057 ml). This suggests that exposure to gas stove and/or second-hand smoke may be associated with slightly lower lung function. However, the differences are small, and the smoke_only group has a very small sample size (n = 36), so these results should be interpreted cautiously.
+
+Overall, FEV appears to differ by town, sex, obesity level, and smoke/gas exposure. Higher mean FEV is observed among males, children with higher BMI categories, and children with neither smoke nor gas stove exposure.
+
+## Step 5: Looking at the Data (EDA)
+
+```{r}
+library(ggplot2)
+
+# focus on the key variables
+eda_dat <- chs_imputed %>%
+  select(sid, townname, male, bmi, fev, pm25_mass, obesity_level, smoke_gas_exposure)
+
+dim(eda_dat)
+str(eda_dat)
+head(eda_dat)
+tail(eda_dat)
+
+summary(eda_dat)
+#summary(eda_dat[, c("bmi", "fev", "pm25_mass")])
+colSums(is.na(eda_dat))
+#colSums(is.na(eda_dat[, c("bmi", "fev", "pm25_mass", "smoke_gas_exposure", "obesity_level")]))
+
+# BMI distribution
+ggplot(eda_dat, aes(x = bmi)) +
+  geom_histogram(bins = 30) +
+  labs(title = "Distribution of BMI", x = "BMI", y = "Count")
+
+# FEV distribution
+ggplot(eda_dat, aes(x = fev)) +
+  geom_histogram(bins = 30) +
+  labs(title = "Distribution of FEV", x = "FEV (ml)", y = "Count")
+
+# PM2.5 distribution
+ggplot(eda_dat, aes(x = pm25_mass)) +
+  geom_histogram(bins = 20) +
+  labs(title = "Distribution of PM2.5", x = "PM2.5 mass", y = "Count")
+
+```
+
+The cleaned EDA dataset contains 1,200 observations and 8 variables. This indicates that the dataset is of manageable size for exploratory analysis and includes the main variables needed to address the study questions.
+
+The key variables in the EDA dataset include both numeric and categorical variables. Specifically, bmi, fev, and pm25_mass are numeric variables, while townname and obesity_level are categorical variables. The variable male is coded numerically as a binary indicator, and smoke_gas_exposure is a four-level categorical variable. Overall, the variable types are consistent with the definitions of the variables and are appropriate for the planned analyses.
+
+Examining the first and last few rows of the dataset suggests that the data were read in correctly and that the variables appear to be properly aligned. The values shown for BMI, FEV, PM2.5, and the derived categorical variables are plausible and consistent with the expected structure of the dataset.
+
+I visualized the distributions of the three main numeric variables: BMI, FEV, and PM2.5 mass. The BMI distribution is somewhat right-skewed, with most observations concentrated between about 15 and 20. The FEV distribution appears roughly unimodal and approximately bell-shaped, centered around 2000 ml. In contrast, the PM2.5 distribution is not smooth and continuous; instead, it appears as several discrete clusters. This is reasonable because pm25_mass is measured at the town/community level, so many children within the same town share the same PM2.5 value.
+
+The observed distributions are generally consistent with expectations. For BMI, the minimum value is 11.30 and the maximum value is 41.27. The upper end is relatively high and may reflect a small number of extreme observations, but it is not impossible in a pediatric dataset. The lower end is also somewhat low, though still plausible for children. For FEV, the minimum value is 984.8 ml and the maximum value is 3323.7 ml. These values appear somewhat extreme, but they are still possible in lung function data and there are no clearly impossible values such as negative measurements. For PM2.5 mass, the clustered distribution matches expectations because the exposure is assigned at the town level rather than measured uniquely for each child. Overall, the key variables appear reasonable and there is no obvious evidence of major data quality problems from these summaries and plots.
+
+I validated the variable meanings using the provided data documentation and assignment instructions. Based on the variable descriptions, fev represents forced expiratory volume in 1 second, pm25_mass represents total PM2.5 exposure, and smoke refers to second-hand smoke exposure. The overall ranges and patterns in the data appear broadly consistent with these definitions. Based on a brief web search and general reference materials, the observed ranges of BMI and FEV also appear to be broadly plausible for children, so the values in this dataset seem to fall within a reasonable range overall, although extreme observations should still be interpreted cautiously.
+
+## Step 6: Visualization
+
+```{r}
+# 1. Facet plot showing scatterplots with regression lines of BMI vs FEV by “townname”.
+ggplot(chs_imputed, aes(x = bmi, y = fev)) +
+  geom_point(alpha = 0.5, size = 1.2) +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(~ townname) +
+  labs(
+    title = "BMI vs FEV by Town",
+    x = "BMI",
+    y = "FEV (ml)"
+  ) +
+  theme_minimal()
+
+# 2. Stacked histograms of FEV by BMI category and FEV by smoke/gas exposure. Use diﬀerent color schemes than the ggplot default.
+ggplot(chs_imputed, aes(x = fev, fill = obesity_level)) +
+  geom_histogram(binwidth = 100, position = "stack", color = "white") +
+  scale_fill_brewer(palette = "Set2") +
+  labs(
+    title = "Stacked Histogram of FEV by BMI Category",
+    x = "FEV (ml)",
+    y = "Count",
+    fill = "BMI Category"
+  ) +
+  theme_minimal()
+
+ggplot(chs_imputed, aes(x = fev, fill = smoke_gas_exposure)) +
+  geom_histogram(binwidth = 100, position = "stack", color = "white") +
+  scale_fill_brewer(palette = "Dark2") +
+  labs(
+    title = "Stacked Histogram of FEV by Smoke/Gas Exposure",
+    x = "FEV (ml)",
+    y = "Count",
+    fill = "Smoke/Gas Exposure"
+  ) +
+  theme_minimal()
+
+# 3. Barchart of BMI by smoke/gas exposure.
+ggplot(chs_imputed, aes(x = smoke_gas_exposure, fill = obesity_level)) +
+  geom_bar(position = "dodge") +
+  scale_fill_brewer(palette = "Pastel1") +
+  labs(
+    title = "BMI Category by Smoke/Gas Exposure",
+    x = "Smoke/Gas Exposure",
+    y = "Count",
+    fill = "BMI Category"
+  ) +
+  theme_minimal()
+
+ggplot(chs_imputed, aes(x = smoke_gas_exposure, fill = obesity_level)) +
+  geom_bar(position = "fill") +
+  scale_fill_brewer(palette = "Pastel1") +
+  labs(
+    title = "Proportion of BMI Category by Smoke/Gas Exposure",
+    x = "Smoke/Gas Exposure",
+    y = "Proportion",
+    fill = "BMI Category"
+  ) +
+  theme_minimal()
+
+# 4. Statistical summary graphs of FEV by BMI and FEV by smoke/gas exposure category.
+ggplot(
+  chs_imputed %>%
+    mutate(obesity_level = factor(
+      obesity_level,
+      levels = c("underweight", "normal", "overweight", "obese")
+    )),
+  aes(x = obesity_level, y = fev, fill = obesity_level)
+) +
+  geom_boxplot() +
+  scale_fill_brewer(palette = "Set3") +
+  labs(
+    title = "FEV by BMI Category",
+    x = "BMI Category",
+    y = "FEV (ml)"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+ggplot(
+  chs_imputed %>%
+    mutate(smoke_gas_exposure = factor(
+      smoke_gas_exposure,
+      levels = c("neither", "smoke_only", "gas_only", "both")
+    )),
+  aes(x = smoke_gas_exposure, y = fev, fill = smoke_gas_exposure)
+) +
+  geom_boxplot() +
+  scale_fill_brewer(palette = "Accent") +
+  labs(
+    title = "FEV by Smoke/Gas Exposure",
+    x = "Smoke/Gas Exposure",
+    y = "FEV (ml)"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# 5. A leaflet map showing the concentrations of PM2.5 mass in each of the CHS communities.
+library(leaflet)
+
+town_pm25 <- chs_imputed %>%
+  group_by(townname) %>%
+  summarise(
+    lon = first(lon),
+    lat = first(lat),
+    pm25_mass = first(pm25_mass)
+  )
+
+pal <- colorNumeric(
+  palette = "YlOrRd",
+  domain = town_pm25$pm25_mass
+)
+
+leaflet(town_pm25) %>%
+  addTiles() %>%
+  addCircleMarkers(
+    lng = ~lon,
+    lat = ~lat,
+    radius = 7,
+    color = ~pal(pm25_mass),
+    fillOpacity = 0.8,
+    stroke = TRUE,
+    popup = ~paste0(
+      "<b>Town:</b> ", townname, "<br>",
+      "<b>PM2.5 mass:</b> ", round(pm25_mass, 2)
+    )
+  ) %>%
+  addLegend(
+    "bottomright",
+    pal = pal,
+    values = ~pm25_mass,
+    title = "PM2.5 mass"
+  )
+# 6. Choose a visualization to examine whether PM2.5 mass is associated with FEV.
+town_fev_pm25 <- chs_imputed %>%
+  group_by(townname) %>%
+  summarise(
+    pm25_mass = first(pm25_mass),
+    mean_fev = mean(fev),
+    sd_fev = sd(fev)
+  )
+
+ggplot(town_fev_pm25, aes(x = pm25_mass, y = mean_fev)) +
+  geom_point(size = 3) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    title = "Town-level PM2.5 Mass and Mean FEV",
+    x = "PM2.5 mass",
+    y = "Mean FEV (ml)"
+  ) +
+  theme_minimal()
+
+```
+
+1.  The faceted scatterplots show a generally positive association between BMI and FEV across almost all towns. In most communities, the fitted regression line slopes upward, suggesting that children with higher BMI tend to have higher FEV values.
+
+    The strength of this association appears to vary somewhat by town. For example, the positive trend looks stronger in places such as Lake Elsinore, San Dimas, and Upland, while it appears weaker in Alpine and Riverside.
+
+    A few possible high-BMI or high-FEV observations are present in some towns, but the overall upward trend remains visible. Overall, the pattern is fairly consistent across towns, although there is still substantial scatter around each regression line, indicating that BMI alone does not fully explain variation in FEV.
+
+2a. Stacked histogram of FEV by BMI category
+
+The stacked histogram of FEV by BMI category shows that most observations come from the normal BMI group, which is expected because this is the largest category in the dataset. The underweight group appears more concentrated at lower FEV values, while the overweight and obese groups contribute relatively more observations at higher FEV values. Overall, the figure suggests that higher BMI categories tend to be associated with higher FEV, although the category sizes are quite different.
+
+2b. Stacked histogram of FEV by smoke/gas exposure
+
+The stacked histogram of FEV by smoke/gas exposure shows that the overall shape of the FEV distribution is fairly similar across exposure groups, with most observations centered around 1800--2300 ml. However, the groups are highly unbalanced in size, especially because the gas_only group is much larger than the others and therefore dominates the stacked bars. As a result, this figure is more useful for showing group composition than for making strong comparisons of lung function across exposure categories. Any differences between exposure groups appear modest in this descriptive plot.
+
+3.  The count bar chart is dominated by the gas_only group because it contains the largest number of observations, so the raw counts are not very informative for comparing BMI distributions across exposure groups.
+
+    The proportional bar chart provides a clearer comparison. Across all smoke/gas exposure groups, the normal BMI category makes up the largest proportion of children. The proportions of overweight and obese children appear somewhat higher in the gas_only and both groups than in the neither group, although the differences are not very large. Overall, the BMI category distribution looks broadly similar across exposure groups, with only modest variation.
+
+4a. FEV by BMI category
+
+The boxplot of FEV by BMI category shows clear differences across BMI groups. The underweight group has the lowest median FEV, while the overweight and obese groups have the highest medians. The normal group lies in between. This suggests a positive association between BMI category and FEV, consistent with the earlier summary statistics and histograms. There is also noticeable variability within each category, and a few outliers are present in all groups.
+
+4b. FEV by smoke/gas exposure
+
+In contrast, the boxplot of FEV by smoke/gas exposure shows much smaller differences across exposure groups. The medians are fairly close to one another, and the interquartile ranges overlap substantially. This suggests that the association between smoke/gas exposure and FEV is relatively weak in this descriptive comparison. Although there are some outliers in each group, the overall distributions look quite similar.
+
+5.  The leaflet map shows clear geographic variation in PM2.5 mass across the CHS communities. The highest PM2.5 concentrations appear in the inland communities, especially around Riverside and nearby areas, while lower concentrations are observed in some of the coastal and more distant communities.
+
+    This spatial pattern suggests that air pollution exposure is not evenly distributed across towns. In particular, inland areas seem to experience higher PM2.5 levels than several coastal locations. The interactive map is useful because it allows the geographic distribution of PM2.5 exposure to be viewed directly and compared across communities.
+
+6.  This town-level scatterplot suggests a negative association between PM2.5 mass and mean FEV. Towns with higher PM2.5 concentrations tend to have lower average FEV values, as indicated by the downward-sloping regression line.
+
+    Although the relationship is not perfect and there is still variation across towns, the overall pattern is consistent with the idea that higher air pollution exposure may be associated with worse lung function. Because PM2.5 is measured at the town level, this town-level visualization is more appropriate than a child-level scatterplot for examining this relationship.
