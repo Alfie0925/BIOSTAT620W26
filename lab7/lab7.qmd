@@ -1,0 +1,120 @@
+---
+title: "Lab7"
+author: "Shuchen Wu"
+format: html
+editor: visual
+embed-resources: true
+fig-width: 8
+fig-height: 6
+---
+
+## Question 1
+
+```{r}
+# Downloading the website
+website <- xml2::read_html("https://pubmed.ncbi.nlm.nih.gov/?term=sars-cov-2")
+
+# Finding the counts
+counts <- xml2::xml_find_first(website, "//div[contains(@class, 'results-amount')]//span")
+
+# Turning it into text
+counts <- as.character(counts)
+
+# Extracting the data using regex
+totalcount <- stringr::str_extract(counts, "[0-9,.]+")
+
+# Removing any commas/dots so that we can convert to numeric
+totalcount <- gsub("[,.]", "", totalcount)
+
+totalcount <- as.numeric(totalcount)
+print(totalcount)
+```
+
+## Question 2
+
+```{r}
+# read in text, each line is a separate character
+abstracts <- readLines("abstract-sars-cov-2-set.txt", warn = FALSE)
+
+# combine all text into one character
+abstracts <- paste(abstracts, collapse = "\n")
+
+# split the text whenever 3 new lines occur in a row (indicating two blank lines)
+abstracts <- strsplit(abstracts, "\n\n\n")[[1]]
+
+# replace any remaining "\n" symbols with spaces
+abstracts <- gsub("\n", " ", abstracts)
+
+# replace multiple spaces with single space
+abstracts <- gsub(" +", " ", abstracts)
+```
+
+## Question 3
+
+```{r}
+library(stringr)
+
+institution <- str_extract_all(
+  abstracts,
+  "\\b(?:[A-Z][A-Za-z&.-]*(?:\\s+[A-Z][A-Za-z&.-]*)*\\s+State\\s+University|[A-Z][A-Za-z&.-]*(?:\\s+[A-Z][A-Za-z&.-]*)*\\s+University|University\\s+of\\s+[A-Z][A-Za-z&.-]*(?:\\s+[A-Z][A-Za-z&.-]*)*|[A-Z][A-Za-z&.-]*(?:\\s+[A-Z][A-Za-z&.-]*)*\\s+Institute\\s+of\\s+[A-Z][A-Za-z&.-]*(?:\\s+[A-Z][A-Za-z&.-]*)*)\\b"
+)
+
+institution <- unlist(institution)
+
+sort(table(institution), decreasing = TRUE)[1:10]
+```
+
+The 10 most common institutions in the abstracts are led by University of Michigan (1397), followed by University of Michigan Medical School (384), Michigan State University (381), and Wayne State University (237). Other frequently appearing institutions include University of California (173), Johns Hopkins University (147), University of Pennsylvania (142), The University (119), University of Michigan School (119), and Vanderbilt University (107).
+
+These results could be improved because some matches are incomplete or inconsistent. For example, \"The University\" is too vague to be a true institution name, and \"University of Michigan School\" or \"University of Michigan Medical School\" may represent subdivisions of the same university rather than separate institutions. Also, the regex may capture partial names instead of the full affiliation.
+
+## Question 4
+
+```{r}
+library(stringr)
+
+# read in text, each line is a separate character
+abstracts <- readLines("abstract-sars-cov-2-set.txt", warn = FALSE)
+
+# combine all text into one character
+abstracts <- paste(abstracts, collapse = "\n")
+
+# split the text whenever 3 new lines occur in a row (indicating two blank lines)
+abstracts <- strsplit(abstracts, "\n\n\n")[[1]]
+
+journal <- str_match(
+  abstracts,
+  "(?m)^\\d+\\.\\s(.+?)\\.\\s\\d{4}\\b"
+)[,2]
+
+titles <- sapply(abstracts, function(x){
+  unlist(strsplit(x, split = "\n\n"))[2]
+}, USE.NAMES = FALSE)
+
+titles <- gsub("\n", " ", titles)
+titles <- gsub(" +", " ", titles)
+
+authors <- sapply(abstracts, function(x){
+  unlist(strsplit(x, split = "\n\n"))[3]
+}, USE.NAMES = FALSE)
+
+authors <- gsub("\n", " ", authors)
+authors <- gsub(" +", " ", authors)
+
+affiliations <- str_extract(abstracts, "(?s)(?<=\\n\\nAuthor information:\\n).+?(?=\\n\\n)")
+affiliations <- gsub("\n", " ", affiliations)
+affiliations <- gsub(" +", " ", affiliations)
+
+authors_short <- substr(authors, 1, 100)
+affiliations_short <- substr(affiliations, 1, 100)
+
+papers <- data.frame(
+  journal = journal,
+  title = titles,
+  authors = authors_short,
+  affiliations = affiliations_short,
+  stringsAsFactors = FALSE
+)
+
+knitr::kable(papers[1:5, ])
+```
