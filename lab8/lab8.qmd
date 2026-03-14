@@ -1,0 +1,213 @@
+---
+title: "Lab8"
+author: "Shuchen Wu"
+format: html
+editor: visual
+embed-resources: true
+fig-width: 8
+fig-height: 6
+---
+
+## Problem 1
+
+```{r}
+# Step 1
+fun1 <- function(n = 100, k = 4, lambda = 4) {
+  x <- NULL
+  
+  for (i in 1:n) {
+    x <- rbind(x, rpois(k, lambda))
+  }
+  
+  return(x)
+}
+
+fun1alt <- function(n = 100, k = 4, lambda = 4) {
+  matrix(rpois(n * k, lambda), nrow = n, ncol = k, byrow = TRUE)
+}
+
+# check outputs
+set.seed(123)
+a1 <- fun1()
+
+set.seed(123)
+a2 <- fun1alt()
+
+dim(a1)
+dim(a2)
+
+identical(a1, a2)
+all.equal(a1, a2)
+
+summary(as.vector(a1))
+summary(as.vector(a2))
+
+mean(a1); var(as.vector(a1))
+mean(a2); var(as.vector(a2))
+
+# Benchmarking
+library(microbenchmark)
+
+microbenchmark(
+  fun1(),
+  fun1alt(),
+  times = 100
+)
+
+# Step 2
+# Data Generating Process (10 x 10,000 matrix)
+set.seed(1234)
+x <- matrix(rnorm(1e4), nrow=10)
+
+# Find each column's max value
+fun2 <- function(x) {
+  apply(x, 2, max)
+}
+
+fun2alt <- function(x) {
+  idx <- max.col(t(x), ties.method = "first")
+  x[cbind(idx, seq_len(ncol(x)))]
+}
+
+# check outputs
+set.seed(1234)
+x <- matrix(rnorm(1e4), nrow = 10)
+
+out1 <- fun2(x)
+out2 <- fun2alt(x)
+
+identical(out1, out2)
+all.equal(out1, out2)
+
+summary(as.vector(out1))
+summary(as.vector(out2))
+
+mean(a1); var(as.vector(out1))
+mean(a2); var(as.vector(out2))
+
+microbenchmark(
+  fun2(x),
+  fun2alt(x),
+  times = 100
+)
+```
+
+## Problem 2
+
+```{r}
+# Step 1
+my_boot <- function(dat, stat, R, ncpus = 1L) {
+  
+  # Getting the random indices
+  n <- nrow(dat)
+  idx <- matrix(sample.int(n, n*R, TRUE), nrow=n, ncol=R)
+  
+  # THIS FUNCTION NEEDS TO BE PARALELLIZED
+  # EDIT THIS CODE:
+  # If only one CPU, use serial version
+  if (ncpus <= 1L) {
+    ans <- lapply(seq_len(R), function(i) {
+      stat(dat[idx[, i], , drop = FALSE])
+    })
+  } else {
+    library(parallel)
+    
+    # Create cluster
+    cl <- makeCluster(ncpus)
+    
+    # Make sure cluster is stopped when function exits
+    on.exit(stopCluster(cl), add = TRUE)
+    
+    # Export needed objects to workers
+    clusterExport(cl, c("dat", "idx", "stat"), envir = environment())
+    
+    # Parallel loop
+    ans <- parLapply(cl, seq_len(R), function(i) {
+      stat(dat[idx[, i], , drop = FALSE])
+    })
+  }
+  
+  # Converting the list into a matrix
+  ans <- do.call(rbind, ans)
+
+  return(ans)
+}
+
+# Step 2
+# Bootstrap of an OLS
+my_stat <- function(d) coef(lm(y ~ x, data=d))
+
+# DATA SIM
+set.seed(1)
+n <- 500; R <- 1e4
+
+x <- cbind(rnorm(n)); y <- x*5 + rnorm(n)
+
+# Checking if we get something similar as lm
+ans0 <- confint(lm(y~x))
+ans1 <- my_boot(dat = data.frame(x, y), my_stat, R = R, ncpus = 2L)
+
+# You should get something like this
+t(apply(ans1, 2, quantile, c(.025,.975)))
+##                   2.5%      97.5%
+## (Intercept) -0.1372435 0.05074397
+## x            4.8680977 5.04539763
+ans0
+##                  2.5 %     97.5 %
+## (Intercept) -0.1379033 0.04797344
+## x            4.8650100 5.04883353
+
+# Step 3
+my_boot_serial <- function(dat, stat, R) {
+  n <- nrow(dat)
+  idx <- matrix(sample.int(n, n * R, TRUE), nrow = n, ncol = R)
+  
+  ans <- lapply(seq_len(R), function(i) {
+    stat(dat[idx[, i], , drop = FALSE])
+  })
+  
+  ans <- do.call(rbind, ans)
+  return(ans)
+}
+
+# Same setup
+my_stat <- function(d) coef(lm(y ~ x, data = d))
+
+set.seed(1)
+n <- 500
+R <- 1e4
+x <- cbind(rnorm(n))
+y <- x * 5 + rnorm(n)
+dat <- data.frame(x, y)
+
+# Serial timing
+set.seed(2026)
+time_serial <- system.time({
+  ans_serial <- my_boot_serial(dat, my_stat, R = R)
+})
+
+# Parallel timing
+set.seed(2026)
+time_parallel <- system.time({
+  ans_parallel <- my_boot(dat, my_stat, R = R, ncpus = 2L)
+})
+
+time_serial
+time_parallel
+```
+
+## Problem 3
+
+1.Explain in your own words how you can decide if a problem is fit for parallelization?
+
+A problem is a good fit for parallelization when it can be divided into many separate tasks that do not strongly depend on each other. If each task can be computed independently, then multiple cores can work on them at the same time. In this lab, the bootstrap example is a good case because each bootstrap replication is separate from the others.
+
+I would also check whether the task is large enough to justify the overhead of parallel computing. Parallelization has extra cost from creating workers, sending objects to them, and combining the results. In my results, the parallel bootstrap was faster than the serial version (elapsed time 1.796 seconds versus 2.853 seconds), so this suggests that the bootstrap problem here is large enough and independent enough to benefit from parallelization.
+
+2.We have covered vectorization and parallelization in this lab. Explain in your own words how you can think about the relationship between vectorization and paralleization? How do we know whether we should use one or the other or both?
+
+Vectorization and parallelization are both ways to make code faster, but they improve performance in different ways. Vectorization speeds up code by replacing explicit loops with optimized operations on whole vectors, matrices, or built-in functions. Parallelization speeds up code by splitting independent work across multiple CPU cores.
+
+This lab shows that vectorization should usually be considered first. In Problem 1, the vectorized versions produced the same outputs as the original functions, but they were much faster. For example, fun1alt() was much faster than fun1(), and fun2alt() was much faster than fun2(x). That means a lot of speed can already be gained without using multiple cores.
+
+After that, parallelization becomes useful when the remaining work still involves many repeated independent tasks. In Problem 2, the bootstrap replications could not be reduced to a simple vectorized calculation, so parallelization was a good next step. It also improved runtime in my results. So my general rule is: first make the code efficient on one core using vectorization or optimized built-in functions, and then use parallelization when the task is still large and naturally separable. Sometimes the best approach is to use both.
