@@ -1,0 +1,232 @@
+---
+title: "HW3"
+author: "Shuchen Wu"
+format: html
+editor: visual
+embed-resources: true
+fig-width: 8
+fig-height: 6
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+## Question 1
+
+```{r}
+# install.packages("tidytext")
+library(tidyverse)
+library(tidytext)
+
+pubmed = read.csv("pubmed.csv", header = TRUE)
+
+dim(pubmed)
+
+abstract_count_by_term = pubmed |>
+  count(term, sort = TRUE)
+
+abstract_count_by_term
+
+pubmed_tokens = pubmed |>
+  unnest_tokens(token, abstract)
+
+head(pubmed_tokens)
+
+token_count_all = pubmed_tokens |>
+  count(token, sort = TRUE)
+
+head(token_count_all, 10)
+
+top5_tokens_by_term = pubmed_tokens |>
+  count(term, token, sort = TRUE) |>
+  group_by(term) |>
+  slice_max(order_by = n, n = 5, with_ties = FALSE) |>
+  arrange(term, desc(n))
+
+top5_tokens_by_term
+```
+
+There are 3,241 abstracts in the dataset across five search terms. There are 981 abstracts associated with covid, 787 with prostate cancer, 780 with preeclampsia, 376 with cystic fibrosis, and 317 with meningitis.
+
+After tokenizing the abstracts, I counted token frequencies overall and within each search term. I found that the most common tokens overall are mostly common English words such as “the” (28126), “of” (24760), and “and”(19993). This is interesting because it shows that raw token counts are heavily affected by stop words. For the covid term, “covid” and “19” are also among the most common tokens, which reflects the topic directly. Overall, the top 5 tokens for each search term are useful for a first summary, but they are not always the most informative words unless stop words are removed.
+
+For covid, the 5 most common tokens are “the” (9741), “of” (7668), “covid” (7275), “19” (7035), and “and” (6861).
+
+For cystic fibrosis, the 5 most common tokens are “the” (2677), “of” (2304), “and” (1777), “in” (1497), and “to” (1011).
+
+For meningitis, the 5 most common tokens are “the” (2489), “of” (2269), “and” (1683), “in” (1322), and “a” (830).
+
+For preeclampsia, the 5 most common tokens are “the” (7119), “of” (6837), “and” (5255), “in” (3869), and “to” (2651).
+
+For prostate cancer, the 5 most common tokens are “the” (6100), “of” (5682), “and” (4417), “cancer” (3840), and “prostate” (3832).
+
+## Question 2
+
+```{r}
+data("stop_words")
+
+pubmed_tokens_nostop = pubmed |>
+  unnest_tokens(token, abstract) |>
+  anti_join(stop_words, by = c("token" = "word"))
+
+head(pubmed_tokens_nostop)
+
+token_count_nostop = pubmed_tokens_nostop |>
+  count(token, sort = TRUE)
+
+head(token_count_nostop, 10)
+
+top5_tokens_nostop_by_term = pubmed_tokens_nostop |>
+  count(term, token, sort = TRUE) |>
+  group_by(term) |>
+  slice_max(order_by = n, n = 5, with_ties = FALSE) |>
+  arrange(term, desc(n))
+
+top5_tokens_nostop_by_term
+```
+
+Yes, removing stop words changes which tokens appear as the most frequent. Before removing stop words, the most common tokens were mostly common English words such as “the,” “of,” and “and.” After removing stop words, the most frequent tokens become much more topic-specific and easier to interpret.
+
+After removing stop words, the 5 most common tokens for covid are “covid” (7275), “19” (7035), “patients” (2293), “disease” (943), and “pandemic” (800).
+
+For cystic fibrosis, the 5 most common tokens are “fibrosis” (867), “cystic” (862), “cf” (625), “patients” (586), and “disease” (400).
+
+For meningitis, the 5 most common tokens are “patients” (446), “meningitis” (429), “meningeal” (219), “csf” (206), and “clinical” (187).
+
+For preeclampsia, the 5 most common tokens are “pre” (2038), “eclampsia” (2005), “preeclampsia” (1863), “women” (1196), and “pregnancy” (969).
+
+For prostate cancer, the 5 most common tokens are “cancer” (3840), “prostate” (3832), “patients” (934), “treatment” (926), and “disease” (652).
+
+Overall, removing stop words makes the results much more informative because the most frequent tokens now reflect the actual medical topics in the abstracts rather than general English words. One interesting pattern is that some terms remain split during tokenization, such as “19” for covid and “pre” plus “eclampsia” for preeclampsia, which suggests that tokenization can separate meaningful multi-part terms.
+
+## Question 3
+
+```{r}
+library(forcats)
+
+# tokenize into bigrams
+pubmed_bigrams = pubmed |>
+  unnest_ngrams(bigram, abstract, n = 2)
+
+head(pubmed_bigrams)
+
+# count bigrams
+bigram_count = pubmed_bigrams |>
+  count(bigram, sort = TRUE)
+
+# top 10 most common bigrams
+top10_bigrams = bigram_count |>
+  slice_max(order_by = n, n = 10, with_ties = FALSE)
+
+top10_bigrams
+
+# visualize
+top10_bigrams |>
+  ggplot(aes(x = n, y = fct_reorder(bigram, n))) +
+  geom_col() +
+  labs(
+    title = "Top 10 Most Common Bigrams",
+    x = "Count",
+    y = "Bigram"
+  )
+```
+
+I tokenize the abstracts into bigrams, and found that the 10 most common bigrams are “covid 19,” “of the,” “in the,” “prostate cancer,” “pre eclampsia,” “patients with,” “of covid,” “and the,” “to the,” and “of prostate.” The most frequent bigram is “covid 19,” which is consistent with the large number of covid abstracts. However, several common bigrams are still generic English phrases, showing that the results are affected by stop words when no filtering is applied.
+
+## Question 4
+
+```{r}
+# count each token within each search term
+tfidf_tbl = pubmed_tokens |>
+  count(term, token, sort = TRUE) |>
+  bind_tf_idf(token, term, n)
+
+head(tfidf_tbl, 10)
+
+# top 5 tokens with highest TF-IDF for each search term
+top5_tfidf_by_term = tfidf_tbl |>
+  group_by(term) |>
+  slice_max(order_by = tf_idf, n = 5, with_ties = FALSE) |>
+  arrange(term, desc(tf_idf))
+
+top5_tfidf_by_term
+```
+
+TF-IDF was calculated for each token-search term combination, treating each search term as a document. The tokens with the highest TF-IDF values are those that are relatively frequent within one search term but less common across the other search terms.
+
+For covid, the 5 tokens with the highest TF-IDF values are “covid,” “pandemic,” “coronavirus,” “sars,” and “cov.”
+
+For cystic fibrosis, the 5 tokens with the highest TF-IDF values are “cf,” “fibrosis,” “cystic,” “cftr,” and “sweat.”
+
+For meningitis, the 5 tokens with the highest TF-IDF values are “meningitis,” “meningeal,” “pachymeningitis,” “csf,” and “meninges.”
+
+For preeclampsia, the 5 tokens with the highest TF-IDF values are “eclampsia,” “preeclampsia,” “pregnancy,” “maternal,” and “gestational.”
+
+For prostate cancer, the 5 tokens with the highest TF-IDF values are “prostate,” “androgen,” “psa,” “prostatectomy,” and “castration.”
+
+These results are different from the answers in Question 1 because Question 1 only identified the most frequent tokens within each search term, so many common English words such as “the,” “of,” and “and” appeared at the top. In contrast, TF-IDF downweights words that are common across all search terms and highlights words that are more distinctive to a specific topic. As a result, the TF-IDF results are much more informative and more specific to each medical subject.
+
+## Question 5
+
+```{r}
+# install.packages("textdata")
+library(textdata)
+
+# tokenize and join NRC lexicon
+pubmed_nrc = pubmed |>
+  unnest_tokens(word, abstract) |>
+  inner_join(get_sentiments("nrc"), by = "word")
+
+head(pubmed_nrc)
+
+# most common sentiment for each search term
+most_common_sentiment = pubmed_nrc |>
+  group_by(term) |>
+  summarise(sentiment = names(which.max(table(sentiment))))
+
+most_common_sentiment
+
+nrc_fun = get_sentiments("nrc")
+nrc_fun = nrc_fun[!nrc_fun$sentiment %in% c("positive", "negative"), ]
+
+pubmed_nrc_no_pn = pubmed |>
+  unnest_tokens(word, abstract) |>
+  inner_join(nrc_fun, by = "word")
+
+most_common_sentiment_no_pn = pubmed_nrc_no_pn |>
+  group_by(term) |>
+  summarise(sentiment = names(which.max(table(sentiment))))
+
+most_common_sentiment_no_pn
+```
+
+Using the NRC lexicon, the most common sentiment is positive for covid, cystic fibrosis, and preeclampsia, and negative for meningitis and prostate cancer. After removing positive and negative, the most common sentiment becomes fear for covid, meningitis, and prostate cancer, disgust for cystic fibrosis, and anticipation for preeclampsia. This shows that positive and negative dominate the original NRC results, while removing makes the sentiment analysis more nuanced and interpretable.
+
+## Question 6
+
+```{r}
+# create an index for abstracts
+pubmed_id = pubmed |>
+  mutate(abstract_id = row_number())
+
+# average AFINN score for each abstract
+afinn_by_abstract = pubmed_id |>
+  unnest_tokens(word, abstract) |>
+  inner_join(get_sentiments("afinn"), by = "word") |>
+  group_by(term, abstract_id) |>
+  summarise(avg_score = mean(value), .groups = "drop")
+
+head(afinn_by_abstract, 10)
+
+ggplot(afinn_by_abstract, aes(x = term, y = avg_score)) +
+  geom_boxplot() +
+  labs(
+    title = "Average AFINN sentiment score by search term",
+    x = "Search term",
+    y = "Average positivity score"
+  ) +
+  theme_minimal()
+```
+
+Using the AFINN lexicon, I calculated an average sentiment score for each abstract and compared the distributions across search terms with a boxplot. The search terms are generally similar, with most scores centered near zero. However, cystic fibrosis appears more positive overall, while the other terms are slightly negative. Meningitis also shows greater variability than the other groups.
