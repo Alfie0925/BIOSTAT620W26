@@ -1,0 +1,29 @@
+---
+title: "Home"
+format: html
+description: "Personal website of Shuchen (Alfie) Wu"
+---
+
+# Shuchen (Alfie) Wu
+
+Mathematics and Computer Science graduate from the University of Toronto with interests in statistics, machine learning, data analysis, and software development.
+
+## Contact
+
+- Email: wusc@umich.edu
+- Phone: +1 734-945-3982
+
+## Welcome
+
+Welcome to my personal website. I built this site to share my academic background, technical skills, and selected projects.
+
+My main interests include:
+- Statistics and data analysis
+- Machine learning
+- Software development
+- Mathematical problem solving
+
+## Quick Links
+
+- [About](about.qmd)
+- [Projects](projects.qmd)

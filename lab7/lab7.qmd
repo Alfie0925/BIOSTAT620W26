@@ -66,7 +66,7 @@ sort(table(institution), decreasing = TRUE)[1:10]
 
 The 10 most common institutions in the abstracts are led by University of Michigan (1397), followed by University of Michigan Medical School (384), Michigan State University (381), and Wayne State University (237). Other frequently appearing institutions include University of California (173), Johns Hopkins University (147), University of Pennsylvania (142), The University (119), University of Michigan School (119), and Vanderbilt University (107).
 
-These results could be improved because some matches are incomplete or inconsistent. For example, \"The University\" is too vague to be a true institution name, and \"University of Michigan School\" or \"University of Michigan Medical School\" may represent subdivisions of the same university rather than separate institutions. Also, the regex may capture partial names instead of the full affiliation.
+These results could be improved because some matches are incomplete or inconsistent. For example, "The University" is too vague to be a true institution name, and "University of Michigan School" or "University of Michigan Medical School" may represent subdivisions of the same university rather than separate institutions. Also, the regex may capture partial names instead of the full affiliation.
 
 ## Question 4
 
