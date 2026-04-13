@@ -6,6 +6,10 @@ editor: visual
 embed-resources: true
 fig-width: 8
 fig-height: 6
+execute:
+  echo: true
+  warning: false
+  message: false
 ---
 
 ## Question 1
@@ -43,9 +47,21 @@ bm <- microbenchmark(
 )
 
 bm
+
+library(ggplot2)
+
+bm_df <- as.data.frame(bm)
+
+ggplot(bm_df, aes(x = expr, y = time / 1e6)) +
+  geom_boxplot() +
+  labs(
+    title = "Runtime comparison: fun2 vs fun2alt",
+    x = "Function",
+    y = "Runtime (ms)"
+  )
 ```
 
-The two functions give same results, and the microbenchmark shows that fun2alt is much faster than the original version.
+The two functions give same results, and the microbenchmark and the graph shows that fun2alt is much faster than the original version.
 
 ## Question 2
 
@@ -98,9 +114,21 @@ bm2 = microbenchmark(
 )
 
 bm2
+
+library(ggplot2)
+
+bm2_df = as.data.frame(bm2)
+
+ggplot(bm2_df, aes(x = expr, y = time / 1e6)) +
+  geom_boxplot() +
+  labs(
+    title = "Runtime comparison: fun3 vs fun3alt",
+    x = "Function",
+    y = "Runtime (ms)"
+  )
 ```
 
-The two functions produce identical results. Although the maximum runtime of fun3alt is larger, its min, lq, mean, median, uq runtime is smaller than that of the original function, indicating that fun3alt is generally faster overall.
+The two functions produce identical results. Although the maximum runtime of fun3alt is larger, its min, lq, mean, median, uq runtime is smaller than that of the original function, indicating that fun3alt is generally faster overall. The graph is also indicating that.
 
 ## Question 3
 
