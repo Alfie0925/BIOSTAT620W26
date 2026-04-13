@@ -1,0 +1,391 @@
+---
+title: "HW4"
+author: "Shuchen Wu"
+format: html
+editor: visual
+embed-resources: true
+fig-width: 8
+fig-height: 6
+---
+
+## Question 1
+
+```{r}
+# running cumulative sum by row
+fun2 <- function(mat) {
+  n <- nrow(mat)
+  k <- ncol(mat)
+  ans <- mat
+  for (i in 1:n) {
+    for (j in 2:k) {
+      ans[i, j] <- mat[i, j] + ans[i, j - 1]
+    }
+  }
+  ans
+}
+
+fun2alt <- function(mat) {
+  t(apply(mat, 1, cumsum))
+}
+
+# test
+set.seed(2315)
+dat <- matrix(rnorm(200 * 100), nrow = 200)
+
+all.equal(fun2(dat), fun2alt(dat))
+
+library(microbenchmark)
+
+bm <- microbenchmark(
+  original = fun2(dat),
+  faster   = fun2alt(dat),
+  times = 100
+)
+
+bm
+```
+
+The two functions give same results, and the microbenchmark shows that fun2alt is much faster than the original version.
+
+## Question 2
+
+```{r}
+fun3 <- function(x) {
+  out <- numeric(length(x))
+  cumsum_x <- 0
+  for (i in seq_along(x)) {
+    if (x[i] == 0) {
+      cumsum_x <- 0
+    } else {
+      cumsum_x <- cumsum_x + x[i]
+    }
+    out[i] <- cumsum_x
+  }
+  out
+}
+
+fun3alt = function(x) {
+  cs = cumsum(x)
+  z = which(x == 0)
+
+  if (length(z) == 0) {
+    return(cs)
+  }
+
+  last_zero_group = findInterval(seq_along(x), z)
+  offset = c(0, cs[z])[last_zero_group + 1]
+
+  out = cs - offset
+  out[x == 0] = 0
+  out
+}
+
+# test
+set.seed(2315)
+dat2 = sample(
+  c(0, -5:5),
+  size = 10000,
+  replace = TRUE,
+  prob = c(0.2, rep(0.8 / 11, 11))
+)
+
+all.equal(fun3(dat2), fun3alt(dat2))
+
+bm2 = microbenchmark(
+  original = fun3(dat2),
+  faster   = fun3alt(dat2),
+  times = 100
+)
+
+bm2
+```
+
+The two functions produce identical results. Although the maximum runtime of fun3alt is larger, its min, lq, mean, median, uq runtime is smaller than that of the original function, indicating that fun3alt is generally faster overall.
+
+## Question 3
+
+```{r}
+library(parallel)
+library(ggplot2)
+
+sim_pi = function(n = 1000, i = NULL) {
+  p = matrix(runif(n * 2), ncol = 2)
+  mean(rowSums(p^2) < 1) * 4
+}
+
+# serial version
+set.seed(1231)
+time_serial = system.time({
+  ans_serial = unlist(lapply(1:4000, sim_pi, n = 10000))
+  print(mean(ans_serial))
+})
+
+# parallel version
+cl = makeCluster(4)
+
+clusterExport(cl, "sim_pi")
+clusterSetRNGStream(cl, 1231)
+
+time_parallel = system.time({
+  ans_parallel = unlist(parLapply(cl, 1:4000, sim_pi, n = 10000))
+  print(mean(ans_parallel))
+})
+
+stopCluster(cl)
+
+time_serial
+time_parallel
+
+pi_df = data.frame(
+  estimate = c(ans_serial, ans_parallel),
+  method = rep(c("Serial", "Parallel"), each = length(ans_serial))
+)
+
+ggplot(pi_df, aes(x = method, y = estimate)) +
+  geom_boxplot() +
+  labs(
+    title = "Pi estimates from serial and parallel simulations",
+    x = "Method",
+    y = "Estimated pi"
+  )
+
+time_df = data.frame(
+  method = c("Serial", "Parallel"),
+  elapsed = c(time_serial["elapsed"], time_parallel["elapsed"])
+)
+
+ggplot(time_df, aes(x = method, y = elapsed)) +
+  geom_col() +
+  labs(
+    title = "Elapsed runtime: serial vs parallel",
+    x = "Method",
+    y = "Elapsed time (seconds)"
+  )
+```
+
+Both the serial and parallel versions produced very similar estimates of pi, with sample means 3.14124 and 3.141578, and their boxplots show nearly identical distributions and ranges.
+
+The parallel version was faster, with elapsed time decreasing from 0.832 seconds to 0.332 seconds.
+
+## Setup
+
+```{r}
+library(RSQLite)
+library(DBI)
+
+# Initialize a temporary in-memory database
+con = dbConnect(RSQLite::SQLite(), ":memory:")
+
+# Read in tables
+surveys = read.csv("surveys.csv")
+species = read.csv("species.csv")
+plots = read.csv("plots.csv")
+
+# Copy data.frames to database
+dbWriteTable(con, "surveys", surveys, overwrite = TRUE)
+dbWriteTable(con, "species", species, overwrite = TRUE)
+dbWriteTable(con, "plots", plots, overwrite = TRUE)
+```
+
+## Question 4
+
+```{sql connection=con}
+PRAGMA table_info(surveys);
+```
+
+```{sql connection=con}
+SELECT
+  year,
+  month,
+  day,
+  species_id,
+  ROUND(weight / 1000.0, 2) AS weight_kg
+FROM surveys
+WHERE year = 1999
+ORDER BY species_id;
+```
+
+The first query uses PRAGMA table_info() to inspect the structure of the surveys table. The second query selects the three date fields, species_id, and weight converted to kilograms and rounded to two decimal places for observations from 1999, ordered alphabetically by species_id. The weight column is recorded in grams in the Portal Teaching Database, so I converted it to kilograms by dividing by 1000 and then rounded to two decimal places.
+
+## Question 5
+
+```{sql connection=con}
+SELECT
+  SUM(weight) AS total_weight,
+  AVG(weight) AS average_weight,
+  MIN(weight) AS min_weight,
+  MAX(weight) AS max_weight
+FROM surveys;
+```
+
+```{sql connection=con}
+SELECT
+  SUM(weight) AS total_weight,
+  AVG(weight) AS average_weight,
+  MIN(weight) AS min_weight,
+  MAX(weight) AS max_weight
+FROM surveys
+WHERE weight BETWEEN 5 AND 10;
+```
+
+Across all animals, the total weight was 1,377,594, with an average of 42.67, a minimum of 4, and a maximum of 280.
+
+Yes, for animals weighing between 5 and 10 inclusive, the total weight was 24,874 and the average weight was 8.39, with weights ranging from 5 to 10.
+
+## Question 6
+
+```{r}
+q6_result = DBI::dbGetQuery(con, "
+  SELECT
+    year,
+    species_id,
+    COUNT(*) AS count_each_year_species,
+    COUNT(weight) AS nonmissing_weight_count,
+    AVG(weight) AS average_weight
+  FROM surveys
+  GROUP BY year, species_id
+  ORDER BY year, species_id;
+")
+
+q6_result
+
+```
+
+I used a query that grouped the data by year and species_id, while keeping groups even when all weight values were missing. To make this explicit, I included both COUNT(\*) and COUNT(weight). Here, COUNT(\*) gives the total number of records in each year-species group, while COUNT(weight) gives the number of non-missing weight values in that group. The average weight is computed by AVG(weight), which uses only the non-missing weight observations, so it is effectively based on the nonmissing_weight_count rather than the total group count. As a result, groups with no recorded weights are still retained in the output, but their average_weight is shown as NA.
+
+Also, I kept all observations in the query, including records with missing species_id, so that unknown species were also retained as part of the dataset summary. This query includes all observations, so rows with missing species_id appear as a separate group representing unidentified species.
+
+## Question 7
+
+```{sql connection=con}
+SELECT
+  taxa,
+  COUNT(*) AS num_species
+FROM species
+GROUP BY taxa
+HAVING COUNT(*) > 10;
+```
+
+Only two taxa had more than 10 species: Rodent (31 species) and Bird (13 species).
+
+## Question 8
+
+```{r}
+q8_result = DBI::dbGetQuery(con, "
+  SELECT
+    s.plot_id,
+    sp.genus,
+    COUNT(*) AS num_animals
+  FROM surveys AS s
+  INNER JOIN species AS sp
+    ON s.species_id = sp.species_id
+  GROUP BY s.plot_id, sp.genus
+  ORDER BY s.plot_id ASC, num_animals DESC;
+")
+
+q8_result
+```
+
+## Question 9
+
+```{sql connection=con}
+SELECT
+  p.plot_type,
+  sp.species_id,
+  sp.genus,
+  sp.species,
+  COUNT(*) AS num_specimens
+FROM surveys AS s
+INNER JOIN plots AS p
+  ON s.plot_id = p.plot_id
+INNER JOIN species AS sp
+  ON s.species_id = sp.species_id
+GROUP BY p.plot_type, sp.species_id, sp.genus, sp.species
+ORDER BY p.plot_type, sp.species_id;
+```
+
+Unknown species are excluded automatically by the inner join with the species table, because only records with a matching species_id in both tables are retained.
+
+## Question 10
+
+```{sql connection=con}
+SELECT
+  sp.species_id,
+  sp.genus,
+  sp.species,
+  AVG(s.weight) AS average_weight
+FROM surveys AS s
+INNER JOIN species AS sp
+  ON s.species_id = sp.species_id
+WHERE sp.taxa = 'Rodent'
+GROUP BY sp.species_id, sp.genus, sp.species
+ORDER BY sp.species_id;
+```
+
+Some rodent species have NA average_weight because there were no non-missing weight observations for those species in the surveys table. I kept them in the result to preserve all rodent species.
+
+## Question 11
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(plotly)
+
+q11_data = q8_result %>%
+  filter(plot_id %in% 1:5)
+
+p = ggplot(q11_data, aes(x = factor(plot_id), y = num_animals, fill = genus)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "Number of animals by genus for plot IDs 1-5",
+    x = "Plot ID",
+    y = "Number of animals",
+    fill = "Genus"
+  )
+
+plotly::ggplotly(p)
+```
+
+The plot shows that Dipodomys has the largest number of animals across plots 1--5, especially in plots 1, 2, and 4.
+
+## Question 12
+
+```{r}
+library(dplyr)
+library(plotly)
+
+q12_data = q6_result %>%
+  filter(
+    !is.na(species_id),
+    !is.na(average_weight),
+    nonmissing_weight_count >= 5
+  ) %>%
+  group_by(species_id) %>%
+  filter(sum(nonmissing_weight_count) >= 50) %>%
+  ungroup() %>%
+  arrange(species_id, year)
+
+plot_ly(
+  data = q12_data,
+  x = ~year,
+  y = ~average_weight,
+  color = ~species_id,
+  type = "scatter",
+  mode = "lines+markers",
+  text = ~paste(
+    "Species ID:", species_id,
+    "<br>Year:", year,
+    "<br>Average weight:", round(average_weight, 2),
+    "<br>Non-missing weights:", nonmissing_weight_count
+  ),
+  hoverinfo = "text"
+) %>%
+  layout(
+    title = "Average species weight over time",
+    xaxis = list(title = "Year"),
+    yaxis = list(title = "Average weight"),
+    legend = list(title = list(text = "Species ID"))
+  )
+```
+
+I used the q6_result table to create an interactive line chart with native plotly functions, showing average species weight over time for each species. Missing data were handled by removing rows with missing average_weight values. To reduce noise, I filtered the data to keep only species with sufficient non-missing observations, which made the trends easier to interpret. The resulting plot shows clearer long-term weight patterns for the remaining species.
